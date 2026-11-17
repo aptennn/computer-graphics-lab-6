@@ -1,4 +1,5 @@
 #include "geometry.h"
+#include "mat4.h"
 
 #include <algorithm>
 #include <cmath>
@@ -194,4 +195,61 @@ Polyhedron makeRegularSolid(RegularSolid solid, double edgeLength) {
     throw std::invalid_argument("Unknown regular solid");
 }
 
+// Лилия: применение произвольной аффинной матрицы ко всем вершинам
+void Polyhedron::applyMatrix(const Mat4& matrix) {
+    for (Point& v : vertices_) {
+        v = matrix.transformPoint(v);
+    }
+}
+
+void Polyhedron::translate(double dx, double dy, double dz) {
+    applyMatrix(Mat4::translation(dx, dy, dz));
+}
+
+void Polyhedron::rotate(double angleRad, char axis) {
+    switch (axis) {
+    case 'x': applyMatrix(Mat4::rotationX(angleRad)); break;
+    case 'y': applyMatrix(Mat4::rotationY(angleRad)); break;
+    case 'z': applyMatrix(Mat4::rotationZ(angleRad)); break;
+    default: throw std::invalid_argument("Axis must be x, y or z");
+    }
+}
+
+// Лилия: вращение вокруг оси, проходящей через центр
+void Polyhedron::rotateAroundCenter(double angleRad, char axis) {
+    const Point c = center();
+    Mat4 R = Mat4::identity();
+    switch (axis) {
+    case 'x': R = Mat4::rotationX(angleRad); break;
+    case 'y': R = Mat4::rotationY(angleRad); break;
+    case 'z': R = Mat4::rotationZ(angleRad); break;
+    default: throw std::invalid_argument("Axis must be x, y or z");
+    }
+    const Mat4 M = Mat4::translation(c.x, c.y, c.z) * R
+                 * Mat4::translation(-c.x, -c.y, -c.z);
+    applyMatrix(M);
+}
+
+void Polyhedron::scale(double sx, double sy, double sz) {
+    applyMatrix(Mat4::scale(sx, sy, sz));
+}
+
+// Лилия: масштаб относительно центра многогранника
+void Polyhedron::scaleAroundCenter(double sx, double sy, double sz) {
+    const Point c = center();
+    const Mat4 M = Mat4::translation(c.x, c.y, c.z)
+                 * Mat4::scale(sx, sy, sz)
+                 * Mat4::translation(-c.x, -c.y, -c.z);
+    applyMatrix(M);
+}
+
+// Лилия: отражение
+void Polyhedron::reflect(const Mat4& reflectionMatrix) {
+    applyMatrix(reflectionMatrix);
+    if (reflectionMatrix.determinant3x3() < 0.0) {
+        for (Polygon& face : faces_) {
+            std::reverse(face.vertexIndices.begin(), face.vertexIndices.end());
+        }
+    }
+}
 } // namespace geometry

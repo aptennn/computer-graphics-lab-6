@@ -17,7 +17,9 @@ find_package(Qt6 COMPONENTS
 add_executable(computer_graphics6
         main.cpp
         geometry.cpp geometry.h
-        wireframe_renderer.cpp wireframe_renderer.h)
+        wireframe_renderer.cpp wireframe_renderer.h
+        math4.cpp math4.h
+        mainwindow.cpp mainwindow.h)
 target_link_libraries(computer_graphics6
         Qt::Core
         Qt::Gui

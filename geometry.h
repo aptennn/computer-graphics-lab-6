@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mat4.h"
 #include <cstddef>
 #include <vector>
 
@@ -30,6 +31,15 @@ public:
     // Центр вычисляется как среднее координат вершин; правильные тела ниже
     // изначально расположены вокруг точки (0, 0, 0).
     Point center() const noexcept;
+
+    // Лилия: аффинные преобразования через матрицы Mat4.
+    void applyMatrix(const Mat4& matrix);
+    void translate(double dx, double dy, double dz);
+    void rotate(double angleRad, char axis);            // 'x' | 'y' | 'z'
+    void rotateAroundCenter(double angleRad, char axis);
+    void scale(double sx, double sy, double sz);
+    void scaleAroundCenter(double sx, double sy, double sz);
+    void reflect(const Mat4& reflectionMatrix);
 
 private:
     std::vector<Point> vertices_;
