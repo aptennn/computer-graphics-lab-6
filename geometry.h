@@ -36,11 +36,13 @@ private:
     std::vector<Polygon> faces_;
 };
 
-// Егор: обязательные правильные многогранники из лабораторной №6.
+// Егор: обязательные и бонусные правильные многогранники из лабораторной №6.
 enum class RegularSolid {
     Tetrahedron,
     Hexahedron,
-    Octahedron
+    Octahedron,
+    Icosahedron,
+    Dodecahedron
 };
 
 // Егор: создание выбранного многогранника с заданной длиной ребра.
