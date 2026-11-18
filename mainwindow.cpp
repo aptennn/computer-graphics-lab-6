@@ -49,6 +49,7 @@ MainWindow::MainWindow(QWidget* parent)
                          "Икосаэдр", "Додекаэдр"});
     solidForm->addRow("Тип:", solidBox_);
     edgeBox_ = new QDoubleSpinBox(solidGroup);
+    edgeBox_->setObjectName("edgeLength");
     edgeBox_->setRange(0.1, 10.0);
     edgeBox_->setValue(edgeLength_);
     edgeBox_->setDecimals(2);
@@ -212,6 +213,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Подключения
     connect(rebuildBtn, &QPushButton::clicked, this, &MainWindow::rebuildModel);
+    connect(edgeBox_, &QDoubleSpinBox::valueChanged, this, [this] { rebuildModel(); });
     connect(transBtn,   &QPushButton::clicked, this, &MainWindow::applyTranslate);
     connect(rotBtn,     &QPushButton::clicked, this, &MainWindow::applyRotate);
     connect(lineBtn, &QPushButton::clicked, this, &MainWindow::applyRotateAroundLine);

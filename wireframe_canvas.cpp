@@ -89,7 +89,9 @@ void WireframeCanvas::paintEvent(QPaintEvent*) {
 
     // Начало координат остаётся в центре, чтобы смещение было видно.
     // При выходе за границы уменьшаем масштаб вида, не меняя саму модель.
-    double scale = 0.25 * std::min(viewport.width(), viewport.height()) / edgeLength_;
+    // Фиксированный базовый масштаб показывает изменение длины ребра.
+    // При необходимости дополнительно уменьшаем вид, чтобы модель поместилась.
+    double scale = 0.25 * std::min(viewport.width(), viewport.height()) / 2.0;
     if (extentX > 0.0) scale = std::min(scale, (viewport.width() - 20) * 0.5 / extentX);
     if (extentY > 0.0) scale = std::min(scale, (viewport.height() - 20) * 0.5 / extentY);
 

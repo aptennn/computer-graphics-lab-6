@@ -128,6 +128,11 @@ int main(int argc, char** argv) {
         require(modelImage(*canvas) != perspective, "Camera distance has no effect");
         projection->setCurrentIndex(0);
         require(modelImage(*canvas) == axonometric, "Projection switch changed model coordinates");
+        auto* edgeLength = child<QDoubleSpinBox>(window, "edgeLength");
+        edgeLength->setValue(3);
+        require(modelImage(*canvas) != axonometric, "Edge length has no visible effect");
+        edgeLength->setValue(2);
+        require(modelImage(*canvas) == axonometric, "Restoring edge length did not restore the model");
 
         auto* mode = child<QComboBox>(window, "rotationMode");
         auto* axis = child<QComboBox>(window, "rotationAxis");
