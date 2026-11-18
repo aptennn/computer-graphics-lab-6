@@ -234,6 +234,10 @@ void Polyhedron::scale(double sx, double sy, double sz) {
     applyMatrix(Mat4::scale(sx, sy, sz));
 }
 
+void Polyhedron::rotateAroundLine(const Point& a, const Point& b, double angleRad) {
+    applyMatrix(Mat4::rotationAroundLine(a, b, angleRad));
+}
+
 // Лилия: масштаб относительно центра многогранника
 void Polyhedron::scaleAroundCenter(double sx, double sy, double sz) {
     const Point c = center();

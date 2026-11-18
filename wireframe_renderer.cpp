@@ -10,6 +10,19 @@
 
 namespace geometry {
 
+void WireframeRenderer::draw(QPainter& painter, const std::vector<ProjectedEdge>& edges,
+                             const QPointF& origin, double scale) {
+    // В модели Y направлена вверх, в экранных координатах — вниз.
+    for (const auto& edge : edges) {
+        const QPointF first = origin + QPointF(edge.first.x, -edge.first.y) * scale;
+        const QPointF second = origin + QPointF(edge.second.x, -edge.second.y) * scale;
+        if (std::isfinite(first.x()) && std::isfinite(first.y()) &&
+            std::isfinite(second.x()) && std::isfinite(second.y())) {
+            painter.drawLine(first, second);
+        }
+    }
+}
+
 // Егор: обход граней, удаление повторяющихся ребер и вывод линий на экран.
 void WireframeRenderer::draw(QPainter& painter, const Polyhedron& polyhedron,
                              const std::vector<QPointF>& screenVertices) {

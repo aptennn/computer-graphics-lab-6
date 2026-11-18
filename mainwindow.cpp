@@ -4,17 +4,18 @@
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QGridLayout>
 #include <QLabel>
-#include <QPainter>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QWidget>
-
-#include <cmath>
+#include <stdexcept>
 
 #include "mat4.h"
-#include "wireframe_renderer.h"
+#include "wireframe_canvas.h"
 
 namespace {
 constexpr double kPi = 3.14159265358979323846;
@@ -30,18 +31,20 @@ geometry::RegularSolid solidFromIndex(int index) {
 }
 } // namespace
 
-MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent),
+      model_(geometry::makeRegularSolid(geometry::RegularSolid::Tetrahedron)) {
     auto* central = new QWidget(this);
     auto* layout = new QHBoxLayout(central);
 
     auto* panel = new QWidget(central);
     auto* panelLayout = new QVBoxLayout(panel);
-    panel->setFixedWidth(320);
 
     // Выбор многогранника
     auto* solidGroup = new QGroupBox("Многогранник", panel);
     auto* solidForm = new QFormLayout(solidGroup);
     solidBox_ = new QComboBox(solidGroup);
+    solidBox_->setObjectName("solidBox");
     solidBox_->addItems({"Тетраэдр", "Гексаэдр (куб)", "Октаэдр",
                          "Икосаэдр", "Додекаэдр"});
     solidForm->addRow("Тип:", solidBox_);
@@ -54,12 +57,43 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     solidForm->addRow(rebuildBtn);
     panelLayout->addWidget(solidGroup);
 
+    // Лекция 9, слайды 39 и 54: выбор матрицы проекции.
+    auto* projectionGroup = new QGroupBox("Проекция", panel);
+    auto* projectionForm = new QFormLayout(projectionGroup);
+    projectionBox_ = new QComboBox(projectionGroup);
+    projectionBox_->setObjectName("projectionBox");
+    projectionBox_->addItems({"Аксонометрическая", "Перспективная"});
+    projectionForm->addRow("Тип:", projectionBox_);
+    cameraDistance_ = new QDoubleSpinBox(projectionGroup);
+    cameraDistance_->setObjectName("cameraDistance");
+    cameraDistance_->setRange(0.5, 1000.0);
+    cameraDistance_->setDecimals(2);
+    cameraDistance_->setSingleStep(0.5);
+    cameraDistance_->setValue(6.0);
+    cameraDistance_->setEnabled(false);
+    cameraDistance_->setToolTip("Расстояние от центра проекции до плоскости z=0 "
+                                "в системе камеры, в единицах длины ребра. "
+                                "Если модель за камерой, увеличьте расстояние.");
+    projectionForm->addRow("Камера (в рёбрах):", cameraDistance_);
+    rotationGuideBox_ = new QComboBox(projectionGroup);
+    rotationGuideBox_->setObjectName("rotationGuideBox");
+    rotationGuideBox_->addItems({"Скрыть ось", "Выбранная ось X/Y/Z", "Прямая AB"});
+    rotationGuideBox_->setCurrentIndex(1);
+    rotationGuideBox_->setToolTip("Синяя — выбранная координатная ось; оранжевая — прямая AB. "
+                                 "C — центр модели, O — начало координат. "
+                                 "Стрелка задаёт положительное направление оси.");
+    projectionForm->addRow("Ось вращения:", rotationGuideBox_);
+    panelLayout->addWidget(projectionGroup);
+
     // Смещение
     auto* transGroup = new QGroupBox("Смещение", panel);
     auto* transForm = new QFormLayout(transGroup);
     tx_ = new QDoubleSpinBox(transGroup); tx_->setRange(-100, 100); tx_->setDecimals(2);
     ty_ = new QDoubleSpinBox(transGroup); ty_->setRange(-100, 100); ty_->setDecimals(2);
     tz_ = new QDoubleSpinBox(transGroup); tz_->setRange(-100, 100); tz_->setDecimals(2);
+    tx_->setObjectName("translateX");
+    ty_->setObjectName("translateY");
+    tz_->setObjectName("translateZ");
     transForm->addRow("dx:", tx_);
     transForm->addRow("dy:", ty_);
     transForm->addRow("dz:", tz_);
@@ -71,9 +105,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* rotGroup = new QGroupBox("Поворот", panel);
     auto* rotForm = new QFormLayout(rotGroup);
     rotAxis_ = new QComboBox(rotGroup);
+    rotAxis_->setObjectName("rotationAxis");
     rotAxis_->addItems({"X", "Y", "Z"});
     rotForm->addRow("Ось:", rotAxis_);
+    rotMode_ = new QComboBox(rotGroup);
+    rotMode_->setObjectName("rotationMode");
+    rotMode_->addItems({"Через начало координат", "Через центр многогранника"});
+    rotForm->addRow("Прямая:", rotMode_);
     rotAngle_ = new QDoubleSpinBox(rotGroup);
+    rotAngle_->setObjectName("rotationAngle");
     rotAngle_->setRange(-360, 360);
     rotAngle_->setValue(45);
     rotAngle_->setSuffix("°");
@@ -81,6 +121,48 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* rotBtn = new QPushButton("Применить", rotGroup);
     rotForm->addRow(rotBtn);
     panelLayout->addWidget(rotGroup);
+
+    // Прямая A+t(B-A); положительный угол — по правилу правой руки от A к B.
+    auto* lineGroup = new QGroupBox("Поворот вокруг прямой AB", panel);
+    auto* lineLayout = new QVBoxLayout(lineGroup);
+    auto* coordinates = new QGridLayout();
+    const std::array<QString, 3> names{"X", "Y", "Z"};
+    coordinates->addWidget(new QLabel("Точка", lineGroup), 0, 0);
+    coordinates->addWidget(new QLabel("A", lineGroup), 1, 0);
+    coordinates->addWidget(new QLabel("B", lineGroup), 2, 0);
+    for (int i = 0; i < 3; ++i) {
+        coordinates->addWidget(new QLabel(names[i], lineGroup), 0, i + 1);
+        for (int row = 0; row < 2; ++row) {
+            auto* input = new QDoubleSpinBox(lineGroup);
+            input->setRange(-1000, 1000);
+            input->setDecimals(3);
+            input->setSingleStep(0.1);
+            input->setValue(row == 0 ? 0.0 : 1.0);
+            input->setObjectName(QString("line%1%2").arg(row == 0 ? "A" : "B", names[i]));
+            (row == 0 ? lineA_ : lineB_)[i] = input;
+            coordinates->addWidget(input, row + 1, i + 1);
+        }
+    }
+    lineLayout->addLayout(coordinates);
+    auto* lineForm = new QFormLayout();
+    lineAngle_ = new QDoubleSpinBox(lineGroup);
+    lineAngle_->setObjectName("lineAngle");
+    lineAngle_->setRange(-360, 360);
+    lineAngle_->setValue(45);
+    lineAngle_->setSuffix("°");
+    lineAngle_->setToolTip("Положительный угол: правило правой руки, направление оси от A к B.");
+    lineForm->addRow("Угол:", lineAngle_);
+    lineLayout->addLayout(lineForm);
+    auto* lineBtn = new QPushButton("Повернуть вокруг AB", lineGroup);
+    lineBtn->setObjectName("rotateAroundLineButton");
+    lineLayout->addWidget(lineBtn);
+    lineError_ = new QLabel(lineGroup);
+    lineError_->setObjectName("lineError");
+    lineError_->setWordWrap(true);
+    lineError_->setStyleSheet("color: #b3261e;");
+    lineError_->hide();
+    lineLayout->addWidget(lineError_);
+    panelLayout->addWidget(lineGroup);
 
     // Масштаб
     auto* scaleGroup = new QGroupBox("Масштаб", panel);
@@ -113,13 +195,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     panelLayout->addStretch();
 
     // Область отрисовки
-    auto* canvas = new QLabel(central);
-    canvas->setMinimumSize(640, 480);
-    canvas->setAlignment(Qt::AlignCenter);
-    canvas->setStyleSheet("background: white;");
+    canvas_ = new WireframeCanvas(model_, edgeLength_, central);
 
-    layout->addWidget(panel);
-    layout->addWidget(canvas, 1);
+    auto* panelScroll = new QScrollArea(central);
+    panelScroll->setWidgetResizable(true);
+    panelScroll->setFrameShape(QFrame::NoFrame);
+    panelScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    panelScroll->setWidget(panel);
+    panelScroll->setFixedWidth(panel->minimumSizeHint().width()
+                               + panelScroll->verticalScrollBar()->sizeHint().width() + 4);
+
+    layout->addWidget(panelScroll);
+    layout->addWidget(canvas_, 1);
     setCentralWidget(central);
     resize(1000, 640);
 
@@ -127,41 +214,92 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(rebuildBtn, &QPushButton::clicked, this, &MainWindow::rebuildModel);
     connect(transBtn,   &QPushButton::clicked, this, &MainWindow::applyTranslate);
     connect(rotBtn,     &QPushButton::clicked, this, &MainWindow::applyRotate);
+    connect(lineBtn, &QPushButton::clicked, this, &MainWindow::applyRotateAroundLine);
+    connect(projectionBox_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        const bool perspective = index == 1;
+        cameraDistance_->setEnabled(perspective);
+        canvas_->setProjectionType(perspective ? geometry::ProjectionType::Perspective
+                                               : geometry::ProjectionType::Axonometric);
+    });
+    connect(cameraDistance_, &QDoubleSpinBox::valueChanged, this, [this](double distance) {
+        canvas_->setCameraDistance(distance);
+    });
+    connect(rotationGuideBox_, &QComboBox::currentIndexChanged, this,
+            [this] { updateRotationGuide(); });
+    for (auto* box : {rotAxis_, rotMode_}) {
+        connect(box, &QComboBox::currentIndexChanged, this, [this] { updateRotationGuide(1); });
+    }
+    connect(rotAngle_, &QDoubleSpinBox::valueChanged, this, [this] { updateRotationGuide(1); });
+    for (int i = 0; i < 3; ++i) {
+        for (auto* input : {lineA_[i], lineB_[i]}) {
+            connect(input, &QDoubleSpinBox::valueChanged, this, [this] { updateRotationGuide(2); });
+        }
+    }
+    connect(lineAngle_, &QDoubleSpinBox::valueChanged, this, [this] { updateRotationGuide(2); });
     connect(scaleBtn,   &QPushButton::clicked, this, &MainWindow::applyScale);
     connect(scaleCenterBtn, &QPushButton::clicked, this, &MainWindow::applyScaleAroundCenter);
     connect(reflBtn,    &QPushButton::clicked, this, &MainWindow::applyReflect);
     connect(resetBtn,   &QPushButton::clicked, this, &MainWindow::resetModel);
 
+    updateRotationGuide();
     rebuildModel();
+}
+
+void MainWindow::updateRotationGuide(int preferredMode) {
+    if (preferredMode > 0 && rotationGuideBox_->currentIndex() != 0 &&
+        rotationGuideBox_->currentIndex() != preferredMode) {
+        rotationGuideBox_->setCurrentIndex(preferredMode);
+        return;
+    }
+    const geometry::Point a{lineA_[0]->value(), lineA_[1]->value(), lineA_[2]->value()};
+    const geometry::Point b{lineB_[0]->value(), lineB_[1]->value(), lineB_[2]->value()};
+    canvas_->setRotationGuide(static_cast<WireframeCanvas::RotationGuide>(rotationGuideBox_->currentIndex()),
+                               rotAxis_->currentIndex(), rotMode_->currentIndex() == 1, a, b);
 }
 
 void MainWindow::rebuildModel() {
     edgeLength_ = edgeBox_->value();
     model_ = geometry::makeRegularSolid(solidFromIndex(solidBox_->currentIndex()), edgeLength_);
-    update();
+    canvas_->update();
 }
 
 void MainWindow::applyTranslate() {
     model_.translate(tx_->value(), ty_->value(), tz_->value());
-    update();
+    canvas_->update();
 }
 
 void MainWindow::applyRotate() {
+    updateRotationGuide(1);
     const double rad = rotAngle_->value() * kPi / 180.0;
     const char axis = (rotAxis_->currentIndex() == 0) ? 'x'
                     : (rotAxis_->currentIndex() == 1) ? 'y' : 'z';
-    model_.rotate(rad, axis);
-    update();
+    if (rotMode_->currentIndex() == 1) model_.rotateAroundCenter(rad, axis);
+    else model_.rotate(rad, axis);
+    canvas_->update();
+}
+
+void MainWindow::applyRotateAroundLine() {
+    updateRotationGuide(2);
+    const geometry::Point a{lineA_[0]->value(), lineA_[1]->value(), lineA_[2]->value()};
+    const geometry::Point b{lineB_[0]->value(), lineB_[1]->value(), lineB_[2]->value()};
+    try {
+        model_.rotateAroundLine(a, b, lineAngle_->value() * kPi / 180.0);
+        lineError_->hide();
+        canvas_->update();
+    } catch (const std::invalid_argument&) {
+        lineError_->setText("Точки A и B совпадают. Задайте две разные точки прямой.");
+        lineError_->show();
+    }
 }
 
 void MainWindow::applyScale() {
     model_.scale(sx_->value(), sy_->value(), sz_->value());
-    update();
+    canvas_->update();
 }
 
 void MainWindow::applyScaleAroundCenter() {
     model_.scaleAroundCenter(sx_->value(), sy_->value(), sz_->value());
-    update();
+    canvas_->update();
 }
 
 void MainWindow::applyReflect() {
@@ -170,42 +308,7 @@ void MainWindow::applyReflect() {
     case 1: model_.reflect(geometry::Mat4::reflectionXZ()); break;
     default: model_.reflect(geometry::Mat4::reflectionYZ()); break;
     }
-    update();
+    canvas_->update();
 }
 
 void MainWindow::resetModel() { rebuildModel(); }
-
-// Простая аксонометрическая (изометрическая) проекция.
-std::vector<QPointF> MainWindow::projectToScreen() const {
-    const double w = width() * 0.62;   
-    const double h = height();
-    const double cx = w * 0.5;
-    const double cy = h * 0.5;
-
-    const double scale = 80.0 / edgeLength_;
-    const double a = kPi / 6.0;        
-    const double ca = std::cos(a), sa = std::sin(a);
-
-    std::vector<QPointF> result;
-    result.reserve(model_.vertices().size());
-    for (const geometry::Point& p : model_.vertices()) {
-        const double sx = (p.x - p.z) * ca;
-        const double sy = (p.x + p.z) * sa - p.y;
-        result.emplace_back(cx + sx * scale, cy + sy * scale);
-    }
-    return result;
-}
-
-void MainWindow::paintEvent(QPaintEvent*) {
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    painter.fillRect(rect(), Qt::white);
-
-    const auto screen = projectToScreen();
-    painter.setPen(QPen(Qt::black, 1.5));
-    geometry::WireframeRenderer::draw(painter, model_, screen);
-
-    painter.setPen(Qt::darkGray);
-    painter.drawText(10, height() - 10, "Каркасный режим");
-}

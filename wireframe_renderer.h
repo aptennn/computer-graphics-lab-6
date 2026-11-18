@@ -1,6 +1,7 @@
 #pragma once
 
 #include "geometry.h"
+#include "projection.h"
 
 #include <QPointF>
 
@@ -17,6 +18,8 @@ public:
     // screenVertices[i] — экранная проекция polyhedron.vertices()[i].
     static void draw(QPainter& painter, const Polyhedron& polyhedron,
                      const std::vector<QPointF>& screenVertices);
+    static void draw(QPainter& painter, const std::vector<ProjectedEdge>& edges,
+                     const QPointF& origin, double scale);
 };
 
 } // namespace geometry

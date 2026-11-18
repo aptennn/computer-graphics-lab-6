@@ -1,6 +1,8 @@
 #include "mat4.h"
+#include "geometry.h"
 
 #include <cmath>
+#include <stdexcept>
 
 namespace geometry {
 
@@ -48,6 +50,34 @@ Mat4 Mat4::rotationZ(double a) {
     r.m[0][0] = c; r.m[0][1] = -s;
     r.m[1][0] = s; r.m[1][1] =  c;
     return r;
+}
+
+Mat4 Mat4::rotationAroundLine(const Point& a, const Point& b, double angleRad) {
+    if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(a.z) ||
+        !std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.z) ||
+        !std::isfinite(angleRad)) {
+        throw std::invalid_argument("Line coordinates and angle must be finite");
+    }
+    const Point direction{b.x - a.x, b.y - a.y, b.z - a.z};
+    const double length = std::hypot(direction.x, direction.y, direction.z);
+    if (!std::isfinite(length) || length <= 1e-12) {
+        throw std::invalid_argument("Two distinct points are required for a rotation axis");
+    }
+    const double l = direction.x / length;
+    const double m = direction.y / length;
+    const double n = direction.z / length;
+    const double d = std::hypot(m, n);
+
+    // Rx(psi) переводит (l,m,n) в (l,0,d), Ry(theta) — в (0,0,1).
+    // При оси, параллельной X, d=0: первый поворот не нужен.
+    const double psi = d > 0.0 ? std::atan2(m, n) : 0.0;
+    const double theta = std::atan2(-l, d);
+
+    // В лекции векторы-строки, здесь векторы-столбцы: применяем справа налево.
+    return translation(a.x, a.y, a.z)
+         * rotationX(-psi) * rotationY(-theta) * rotationZ(angleRad)
+         * rotationY(theta) * rotationX(psi)
+         * translation(-a.x, -a.y, -a.z);
 }
 
 Mat4 Mat4::reflectionXY() { return scale(1.0, 1.0, -1.0); }

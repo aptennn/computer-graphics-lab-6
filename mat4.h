@@ -1,8 +1,8 @@
 #pragma once
 
-#include "geometry.h"
-
 namespace geometry {
+
+struct Point;
 
 // аффинные преобразования в однородных координатах
 struct Mat4 {
@@ -14,6 +14,8 @@ struct Mat4 {
     static Mat4 rotationX(double angleRad);
     static Mat4 rotationY(double angleRad);
     static Mat4 rotationZ(double angleRad);
+    // Лекция 9, слайды 20–28: перенос, совмещение с Z, поворот и возврат.
+    static Mat4 rotationAroundLine(const Point& a, const Point& b, double angleRad);
 
     // Отражение относительно координатной плоскости:
     // XY -> инверсия Z; XZ -> инверсия Y; YZ -> инверсия X

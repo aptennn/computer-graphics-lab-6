@@ -37,6 +37,7 @@ public:
     void translate(double dx, double dy, double dz);
     void rotate(double angleRad, char axis);            // 'x' | 'y' | 'z'
     void rotateAroundCenter(double angleRad, char axis);
+    void rotateAroundLine(const Point& a, const Point& b, double angleRad);
     void scale(double sx, double sy, double sz);
     void scaleAroundCenter(double sx, double sy, double sz);
     void reflect(const Mat4& reflectionMatrix);
